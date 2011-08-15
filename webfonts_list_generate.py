@@ -9,18 +9,18 @@ import re
 __version__ = 1
 USER_AGENT = 'dAlist/%s +http://dt.deviantart.com' % __version__
 GOOGLE = 'http://www.google.com'
-WEBFONTS = GOOGLE + '/webfonts'
+WEBFONTS = 'https://googlefontdirectory.googlecode.com/hg/'
 
 CACHE = {}
 
-def _fetch(url, cached = True, ungzip = True):
+def _fetch(url, data = None, cached = True, ungzip = True):
     """A generic URL-fetcher, which handles gzipped content, returns a string"""
     if cached and url in CACHE:
         return CACHE[url]
     request = urllib2.Request(url)
     request.add_header('Accept-encoding', 'gzip')
     request.add_header('User-agent', USER_AGENT)
-    f = urllib2.urlopen(request)
+    f = urllib2.urlopen(request, data)
     data = f.read()
     if ungzip and f.headers.get('content-encoding', '') == 'gzip':
         data = gzip.GzipFile(fileobj=StringIO(data)).read()
@@ -28,58 +28,52 @@ def _fetch(url, cached = True, ungzip = True):
     CACHE[url] = data
     return data
 
-def extract_font_urls(page):
-    return re.findall(r'href="(/webfonts/family\?family=[^&]+&(?:amp)?;subset=latin)"', page)
-
-def extract_list_urls(page):
-    return re.findall(r'href="(/webfonts/list\?family=[^&]+&(?:amp)?;subset=latin)"', page)
-
-def handle_font(font_url):
-    """Fetches information about the family
+def get_font_data(url):
+    try:
+        info = _fetch(url + 'md5sum')
+    except Exception, e:
+        print e
+        return
     
-    It'd be nice if this didn't have to actually load the page... but the full parameter isn't available on
-    the initial page, unfortunately
-    """
-    font_page = _fetch(GOOGLE + font_url)
+    font_data = {}
+    for f in re.findall("^([^:]+):([^,]+),", info, re.MULTILINE):
+        if f[0] not in font_data:
+            font_data[f[0]] = []
+        value = f[1].replace(':', '').replace('normal', '')
+        font_data[f[0]].append(value or 'normal')
     
-    parameter_match = re.search(r'<span id="urlFamily">([^<]+)</span>', font_page)
-    if not parameter_match:
-        print "skipping %s no parameter" % font_url
-        return False
-    parameter = parameter_match.group(1)
-    
-    name_match = re.search(r'<h2><span[^>]+>([^<]+)</span></h2>', font_page)
-    if not name_match:
-        print "skipping %s no name" % font_url
-        return False
-    name = name_match.group(1)
-    
-    return name, parameter
-
-def handle_list(list_url):
-    page = _fetch(GOOGLE + list_url)
-    return extract_font_urls(page)
+    return font_data
 
 if __name__ == "__main__":
     page = _fetch(WEBFONTS)
-    fonts = extract_font_urls(page)
-    lists = extract_list_urls(page)
+    # fetched the listing of a mercurial repo...
     
-    for l in lists:
-        fonts.extend(handle_list(l))
+    families = re.findall(r'<li><a href="([^"]+/)"', page)
     
-    print "%d fonts found" % len(fonts)
+    font_data = []
+    for family_url in families:
+        print 'fetching', family_url
+        data = get_font_data(WEBFONTS + family_url)
+        if not data:
+            print "Couldn't find data from", family_url
+            continue
+        
+        font_data.extend(data.items())
     
-    font_details = []
-    for font in fonts:
-        font_details.append(handle_font(font))
+    print "%d fonts found" % len(font_data)
     
     # I could just do this with map if I didn't want nice linebreaks. ;_;
     out = []
     line_length = 0
-    font_details.sort()
-    for f in font_details:
-        o = "'%s' => '%s', " % f
+    font_data.sort()
+    for f in font_data:
+        family = f[0]
+        types = ','.join(f[1])
+        if types == 'normal':
+            types = ''
+        if types:
+            types = ':' + types
+        o = "'%s' => '%s%s', " % (family, family.replace(' ', '+'), types)
         line_length = line_length + len(o)
         if line_length > 90:
             out.append("\n")
