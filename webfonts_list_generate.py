@@ -9,6 +9,7 @@ __version__ = 1
 USER_AGENT = 'dAlist/%s +http://dt.deviantart.com' % __version__
 GOOGLE = 'http://www.google.com'
 WEBFONTS = 'https://googlefontdirectory.googlecode.com/hg/'
+SPECIMEN = 'http://www.google.com/webfonts/specimen/'
 
 CACHE = {}
 
@@ -29,32 +30,63 @@ def _fetch(url, data=None, cached=True, ungzip=True):
     return data
 
 
-def get_font_data(url):
+def extract_family(info, family_url):
+    family = re.findall(r"^family: (.+)$", info, re.MULTILINE)
+    if not family:
+        # A lot of them have this command left in the metadata file
+        family = re.findall(r'--chars="([^"]+)"', info)
+    if not family:
+        # Failing that, try a capitalized version of the URL
+        family = [family_url.capitalize()]
+    if len(family) != 1:
+        print "too many results for family", family_url
+        return
+    return family[0]
+
+
+def get_font_data(family_url):
     try:
-        info = _fetch(url + 'md5sum')
+        info = _fetch(WEBFONTS + family_url + '/METADATA')
     except Exception, e:
         print e
         return
 
-    font_data = {}
-    for f in re.findall("^([^:]+):([^,]+),", info, re.MULTILINE):
-        if f[0] not in font_data:
-            font_data[f[0]] = []
-        value = f[1].replace(':', '').replace('normal', '')
-        font_data[f[0]].append(value or 'normal')
+    # We have metadata, such as https://googlefontdirectory.googlecode.com/hg/sueellenfrancisco/METADATA
+    # ...now we need to get actual useful information.
 
-    return font_data
+    family = extract_family(info, family_url)
+    if not family:
+        print "family troubles", family_url
+        return
+
+    # We have the *properly capitalized/spaced* name of the family (i.e. why we needed that metadata)
+    # we use that to fetch a specimen page like www.google.com/webfonts/specimen/Sue+Ellen+Francisco
+    specimen_url = SPECIMEN + family.replace(' ', '+')
+    specimen = _fetch(specimen_url)
+    if not specimen:
+        print "No specimen"
+        return
+    font_param = re.findall(r'<link href=\'//fonts.googleapis.com/css\?family=' + family.replace(' ', '\\+') + r':([^&]+)', specimen)
+    if not (font_param and len(font_param) == 1):
+        print "Can't find CSS link", specimen_url, font_param
+        return
+    font_param = font_param[0]
+
+    return {family: font_param.split(',')}
+
 
 if __name__ == "__main__":
+    # print get_font_data(WEBFONTS + 'abrilfatface/')
     page = _fetch(WEBFONTS)
     # fetched the listing of a mercurial repo...
 
-    families = re.findall(r'<li><a href="([^"]+/)"', page)
+    families = re.findall(r'<li><a href="([^"]+)/"', page)
 
     font_data = []
     for family_url in families:
         print 'fetching', family_url
-        data = get_font_data(WEBFONTS + family_url)
+        data = get_font_data(family_url)
+        # break
         if not data:
             print "Couldn't find data from", family_url
             continue
