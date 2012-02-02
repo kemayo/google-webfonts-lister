@@ -2,7 +2,6 @@
 
 import urllib2
 import gzip
-import httplib
 import StringIO
 import re
 
@@ -13,7 +12,8 @@ WEBFONTS = 'https://googlefontdirectory.googlecode.com/hg/'
 
 CACHE = {}
 
-def _fetch(url, data = None, cached = True, ungzip = True):
+
+def _fetch(url, data=None, cached=True, ungzip=True):
     """A generic URL-fetcher, which handles gzipped content, returns a string"""
     if cached and url in CACHE:
         return CACHE[url]
@@ -28,28 +28,29 @@ def _fetch(url, data = None, cached = True, ungzip = True):
     CACHE[url] = data
     return data
 
+
 def get_font_data(url):
     try:
         info = _fetch(url + 'md5sum')
     except Exception, e:
         print e
         return
-    
+
     font_data = {}
     for f in re.findall("^([^:]+):([^,]+),", info, re.MULTILINE):
         if f[0] not in font_data:
             font_data[f[0]] = []
         value = f[1].replace(':', '').replace('normal', '')
         font_data[f[0]].append(value or 'normal')
-    
+
     return font_data
 
 if __name__ == "__main__":
     page = _fetch(WEBFONTS)
     # fetched the listing of a mercurial repo...
-    
+
     families = re.findall(r'<li><a href="([^"]+/)"', page)
-    
+
     font_data = []
     for family_url in families:
         print 'fetching', family_url
@@ -57,11 +58,11 @@ if __name__ == "__main__":
         if not data:
             print "Couldn't find data from", family_url
             continue
-        
+
         font_data.extend(data.items())
-    
+
     print "%d fonts found" % len(font_data)
-    
+
     # I could just do this with map if I didn't want nice linebreaks. ;_;
     out = []
     line_length = 0
